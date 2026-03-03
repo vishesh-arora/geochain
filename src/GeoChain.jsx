@@ -1266,7 +1266,7 @@ export default function GeoChain() {
     setFeedbackOk(false);
     setInputState("error");
     setUsedSet(newUsed);
-    setChain(c => [...c, { word: pick, who: "player", score: 0, autoPlayed: true }]);
+    setChain(c => [...c, { word: pick, who: "ai", score: 0, autoPlayed: true }]);
 
     setTimeout(() => {
       setInputState(""); setFeedback(""); setCurrentLetter(nextLetter); setTurn("computer");
@@ -1282,43 +1282,45 @@ export default function GeoChain() {
   function submitAnswer() {
     const raw = inputVal.trim();
     if (!raw) return;
-    clearInterval(timerRef.current);
+    // Don't stop the timer here — only stop it on a valid answer
 
     const stripped = stripAccents(raw);
 
-    // 1. Starts with correct letter?
+    // 1. Starts with correct letter? — soft error, timer keeps running
     if (stripped[0]?.toUpperCase() !== currentLetter.toUpperCase()) {
       setFeedback(`Must start with "${currentLetter.toUpperCase()}"`);
       setFeedbackOk(false); setInputState("error");
-      restartTimer();
+      setInputVal("");
       setTimeout(() => { setInputState(""); setFeedback(""); }, 1200);
       return;
     }
 
-    // 2. In dataset? (accent-insensitive)
+    // 2. Already used? — soft error, timer keeps running
     const canonical = ACCENT_MAP.get(stripped);
-    if (!canonical) {
-      const ns = strikesRef.current + 1;
-      strikesRef.current = ns; setStrikes(ns);
-      setFeedback("Not a recognised place — try again!");
-      setFeedbackOk(false); setInputState("error");
-      setTimeout(() => {
-        if (ns >= 3) doEndGame("3 invalid answers — game over!", ns);
-        else { setInputState(""); setFeedback(""); setInputVal(""); inputRef.current?.focus(); }
-      }, 1300);
-      return;
-    }
-
-    // 3. Already used?
     if (usedSet.has(stripped)) {
       setFeedback("Already used!");
       setFeedbackOk(false); setInputState("error");
-      restartTimer();
+      setInputVal("");
       setTimeout(() => { setInputState(""); setFeedback(""); }, 1000);
       return;
     }
 
-    // ✅ Valid!
+    // 3. Not in dataset — costs a strike, timer keeps running so player can try again
+    if (!canonical) {
+      const ns = strikesRef.current + 1;
+      strikesRef.current = ns; setStrikes(ns);
+      setFeedback("Not a recognised place!");
+      setFeedbackOk(false); setInputState("error");
+      setInputVal("");
+      setTimeout(() => {
+        if (ns >= 3) { clearInterval(timerRef.current); doEndGame("3 invalid answers — game over!", ns); }
+        else { setInputState(""); setFeedback(""); inputRef.current?.focus(); }
+      }, 1000);
+      return;
+    }
+
+    // ✅ Valid! — only now do we stop the timer
+    clearInterval(timerRef.current);
     const pts = calcScore(canonical, timeLeft, timerDuration);
     const ns = scoreRef.current + pts; scoreRef.current = ns;
     const newUsed = new Set(usedSet); newUsed.add(stripped);
@@ -1332,15 +1334,6 @@ export default function GeoChain() {
     setTimeout(() => {
       setInputState(""); setFeedback(""); setCurrentLetter(nextLetter); setTurn("computer");
     }, 600);
-  }
-
-  function restartTimer() {
-    timerRef.current = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 1) { clearInterval(timerRef.current); handleTimeout(); return 0; }
-        return t - 1;
-      });
-    }, 1000);
   }
 
   // ── Computer turn ──
@@ -1453,7 +1446,7 @@ export default function GeoChain() {
             </div>
             <div className="chain-display">
               {chain.map((item, i) => (
-                <span key={i} className={`chain-word ${item.autoPlayed ? "auto" : item.who}`} title={item.autoPlayed ? "AI played this for you" : ""}>{item.word}{item.autoPlayed ? " *" : ""}</span>
+                <span key={i} className={`chain-word ${item.who === "ai" ? "auto" : item.who}`} title={item.who === "ai" ? "AI played this for you (time ran out)" : ""}>{item.word}{item.who === "ai" ? " *" : ""}</span>
               ))}
               <div ref={chainEndRef} />
             </div>
@@ -1520,10 +1513,10 @@ export default function GeoChain() {
                     <div key={i} className="chain-summary-item">
                       <div className="chain-summary-idx">{i+1}</div>
                       <div className="chain-summary-word">{item.word}</div>
-                      <div className={`chain-summary-who ${item.autoPlayed ? "auto" : item.who}`}>
-                        {item.autoPlayed ? "AI" : item.who === "player" ? "You" : "CPU"}
+                      <div className={`chain-summary-who ${item.who === "ai" ? "auto" : item.who}`}>
+                        {item.who === "ai" ? "AI" : item.who === "player" ? "You" : "CPU"}
                       </div>
-                      {item.who === "player" && !item.autoPlayed && (
+                      {item.who === "player" && (
                         <div className="chain-summary-pts">+{item.score}</div>
                       )}
                     </div>
