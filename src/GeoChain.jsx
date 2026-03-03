@@ -1122,6 +1122,7 @@ const css = `
   .chain-word { padding: 4px 10px; border-radius: 20px; font-size: 12px; letter-spacing: 0.5px; }
   .chain-word.player { background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.4); color: var(--teal); }
   .chain-word.computer { background: rgba(201,168,76,0.1); border: 1px solid var(--border); color: var(--gold); }
+  .chain-word.auto { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #f87171; }
   .letter-prompt { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .letter-prompt-label { font-size: 10px; letter-spacing: 4px; text-transform: uppercase; color: var(--muted); }
   .letter-prompt-letter { font-family: 'Playfair Display', serif; font-size: 72px; font-weight: 900; color: var(--gold); line-height: 1; text-shadow: 0 0 40px rgba(201,168,76,0.5); }
@@ -1154,6 +1155,7 @@ const css = `
   .chain-summary-who { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; }
   .chain-summary-who.player { background: rgba(56,189,248,0.15); color: var(--teal); }
   .chain-summary-who.computer { background: rgba(201,168,76,0.1); color: var(--gold); }
+  .chain-summary-who.auto { background: rgba(239,68,68,0.1); color: #f87171; }
   .chain-summary-pts { font-size: 12px; color: var(--gold); width: 52px; text-align: right; }
   .end-btn-row { display: flex; gap: 10px; width: 100%; }
   .globe-deco { position: fixed; top: -120px; right: -120px; width: 320px; height: 320px; border-radius: 50%; border: 1px solid rgba(201,168,76,0.08); background: radial-gradient(circle at 35% 35%, rgba(201,168,76,0.06), transparent 70%); pointer-events: none; z-index: 0; }
@@ -1242,11 +1244,33 @@ export default function GeoChain() {
   function handleTimeout() {
     const ns = strikesRef.current + 1;
     strikesRef.current = ns; setStrikes(ns);
-    setFeedback("⏱ Time's up!"); setFeedbackOk(false); setInputState("error");
+
+    if (ns >= 3) {
+      setFeedback("Time's up!"); setFeedbackOk(false); setInputState("error");
+      setTimeout(() => doEndGame("Time's up — 3 strikes and you're out!", ns), 1000);
+      return;
+    }
+
+    // AI steps in and answers on the player's behalf
+    const pick = computerPick(currentLetter, usedSet, difficulty);
+    if (!pick) {
+      doEndGame("No valid answers left — game over!", ns);
+      return;
+    }
+
+    const newUsed = new Set(usedSet); newUsed.add(stripAccents(pick));
+    const nextLetter = lastLetter(pick);
+
+    setInputVal("");
+    setFeedback("Time's up! AI played \"" + pick + "\" for you");
+    setFeedbackOk(false);
+    setInputState("error");
+    setUsedSet(newUsed);
+    setChain(c => [...c, { word: pick, who: "player", score: 0, autoPlayed: true }]);
+
     setTimeout(() => {
-      if (ns >= 3) doEndGame("Time's up — 3 strikes and you're out!", ns);
-      else { setInputState(""); setFeedback(""); inputRef.current?.focus(); }
-    }, 1000);
+      setInputState(""); setFeedback(""); setCurrentLetter(nextLetter); setTurn("computer");
+    }, 1800);
   }
 
   function showPop(pts) {
@@ -1429,7 +1453,7 @@ export default function GeoChain() {
             </div>
             <div className="chain-display">
               {chain.map((item, i) => (
-                <span key={i} className={`chain-word ${item.who}`}>{item.word}</span>
+                <span key={i} className={`chain-word ${item.autoPlayed ? "auto" : item.who}`} title={item.autoPlayed ? "AI played this for you" : ""}>{item.word}{item.autoPlayed ? " *" : ""}</span>
               ))}
               <div ref={chainEndRef} />
             </div>
@@ -1496,10 +1520,10 @@ export default function GeoChain() {
                     <div key={i} className="chain-summary-item">
                       <div className="chain-summary-idx">{i+1}</div>
                       <div className="chain-summary-word">{item.word}</div>
-                      <div className={`chain-summary-who ${item.who}`}>
-                        {item.who === "player" ? "You" : "CPU"}
+                      <div className={`chain-summary-who ${item.autoPlayed ? "auto" : item.who}`}>
+                        {item.autoPlayed ? "AI" : item.who === "player" ? "You" : "CPU"}
                       </div>
-                      {item.who === "player" && (
+                      {item.who === "player" && !item.autoPlayed && (
                         <div className="chain-summary-pts">+{item.score}</div>
                       )}
                     </div>
