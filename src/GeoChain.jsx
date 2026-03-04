@@ -21,6 +21,62 @@ function stripAccents(s) {
 }
 function normalize(s) { return s?.trim().toLowerCase() ?? ""; }
 
+// ── Sound engine (Web Audio API — no files needed) ───────────────────────────
+const AudioCtx = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx && AudioCtx) audioCtx = new AudioCtx();
+  return audioCtx;
+}
+
+function playSound(type) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  // Resume if suspended (browser autoplay policy)
+  if (ctx.state === "suspended") ctx.resume();
+
+  const now = ctx.currentTime;
+
+  if (type === "correct") {
+    // Two-tone ascending ding — warm and satisfying
+    [[520, 0, 0.08, 0.18], [780, 0.09, 0.06, 0.22]].forEach(([freq, startOff, attack, decay]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now + startOff);
+      gain.gain.setValueAtTime(0, now + startOff);
+      gain.gain.linearRampToValueAtTime(0.18, now + startOff + attack);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + startOff + decay);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(now + startOff);
+      osc.stop(now + startOff + decay + 0.05);
+    });
+  } else if (type === "wrong") {
+    // Short descending buzz — unmistakably an error
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(110, now + 0.18);
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(now); osc.stop(now + 0.25);
+  } else if (type === "timeout") {
+    // Three descending blips
+    [0, 0.12, 0.24].forEach((offset, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(300 - i * 60, now + offset);
+      gain.gain.setValueAtTime(0.12, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.1);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(now + offset); osc.stop(now + offset + 0.12);
+    });
+  }
+}
+
 // ── Geo dataset ──────────────────────────────────────────────────────────────
 // Canonical entries (may have accents). Matching is done accent-insensitively.
 const GEO_DATA = [
@@ -74,6 +130,7 @@ const GEO_DATA = [
   "Taiwan","Tajikistan","Tanzania","Thailand","Timor-Leste","Togo","Tonga",
   "Trinidad and Tobago","Tunisia","Turkey","Turkmenistan","Tuvalu",
   "Uganda","Ukraine","United Arab Emirates","United Kingdom","United States",
+  "England","Scotland","Wales","Northern Ireland",
   "Uruguay","Uzbekistan",
   "Vanuatu","Vatican City","Venezuela","Vietnam",
   "Yemen",
@@ -316,7 +373,7 @@ const GEO_DATA = [
   "Tripura","Uttar Pradesh","Uttarakhand","West Bengal",
   // UTs
   "Andaman and Nicobar Islands","Chandigarh","Dadra and Nagar Haveli",
-  "Daman and Diu","Delhi","Jammu and Kashmir","Ladakh","Lakshadweep","Puducherry",
+  "Daman and Diu","Delhi","Jammu and Kashmir","Ladakh","Lakshadweep","Puducherry","Pondicherry",
 
   // ════════════════════════════════════════════════════════════
   // INDIAN CITIES — Tier 1 metros
@@ -345,8 +402,8 @@ const GEO_DATA = [
   "Ahmedabad","Surat","Vadodara","Rajkot","Bhavnagar","Jamnagar",
   "Gandhinagar","Anand","Nadiad","Morbi","Junagadh","Navsari","Surendranagar",
   // Haryana
-  "Faridabad","Gurgaon","Gurugram","Ambala","Karnal","Rohtak","Hisar",
-  "Panipat","Sonipat","Yamunanagar","Rewari","Bhiwani",
+  "Faridabad","Gurgaon","Gurugram","Ambala","Karnal","Rohtak","Hisar","Sirsa",
+  "Panipat","Sonipat","Yamunanagar","Rewari","Bhiwani","Fatehabad","Jind","Kurukshetra","Palwal",
   // Himachal Pradesh
   "Shimla","Dharamsala","Solan","Mandi","Kullu","Manali",
   // Jharkhand
@@ -385,7 +442,7 @@ const GEO_DATA = [
   "Amritsar","Ludhiana","Jalandhar","Patiala","Bathinda","Mohali",
   "Pathankot","Hoshiarpur","Moga","Firozpur","Gurdaspur","Rupnagar","Sangrur",
   // Rajasthan
-  "Jaipur","Jodhpur","Udaipur","Kota","Bikaner","Ajmer","Bhilwara",
+  "Jaipur","Jodhpur","Udaipur","Kota","Bikaner","Ajmer","Bhilwara","Mount Abu",
   "Alwar","Bharatpur","Sikar","Pali","Barmer","Sri Ganganagar","Jhunjhunu",
   "Nagaur","Chittorgarh","Tonk","Bundi","Sawai Madhopur","Hanumangarh",
   // Sikkim
@@ -419,6 +476,99 @@ const GEO_DATA = [
   "Itanagar","Naharlagun","Tawang",
   // North East
   "Imphal","Shillong","Aizawl","Kohima","Agartala","Gangtok",
+
+
+  // ════════════════════════════════════════════════════════════
+  // LOK SABHA CONSTITUENCIES (missing ones added)
+  // ════════════════════════════════════════════════════════════
+  // Andhra Pradesh
+  "Araku","Anakapalle","Amalapuram","Narsapuram","Machilipatnam","Narasaraopet",
+  "Bapatla","Nandyal","Hindupur","Chittoor","Rajampet",
+  // Arunachal Pradesh
+  "Arunachal West","Arunachal East",
+  // Assam
+  "Karimganj","Kaziranga","Sonitpur","Lakhimpur","Barpeta","Dhubri","Kokrajhar",
+  "Diphu","Darrang-Udalguri","Autonomous District",
+  // Bihar
+  "Valmiki Nagar","Sitamarhi","Sheohar","Vaishali","Gopalganj","Siwan","Maharajganj",
+  "Saran","Hajipur","Ujiarpur","Khagaria","Banka","Munger","Nalanda","Patna Sahib",
+  "Pataliputra","Buxar","Sasaram","Karakat","Jahanabad","Nawada","Jamui","Supaul",
+  "Araria","Kishanganj","Madhepura","Madhubani","Jhanjharpur","Purvi Champaran",
+  "Paschim Champaran",
+  // Chhattisgarh
+  "Sarguja","Raigarh","Janjgir-Champa","Bastar","Kanker","Mahasamund",
+  // Delhi
+  "Chandni Chowk","North East Delhi","East Delhi","North West Delhi","West Delhi","South Delhi",
+  // Goa
+  "North Goa","South Goa",
+  // Gujarat
+  "Kachchh","Banaskantha","Patan","Mahesana","Sabarkantha","Ahmedabad East","Ahmedabad West",
+  "Porbandar","Chhota Udaipur","Dahod","Kheda","Panchmahal","Bardoli","Navsari","Valsad",
+  "Amreli","Bharuch",
+  // Haryana
+  "Bhiwani-Mahendragarh",
+  // Himachal Pradesh
+  "Kangra","Mandi","Hamirpur",
+  // Jammu and Kashmir
+  "Baramulla","Anantnag-Rajouri","Udhampur","Jammu",
+  // Jharkhand
+  "Rajmahal","Dumka","Godda","Chatra","Kodarma","Giridih","Singhbhum","Khunti",
+  "Lohardaga","Palamu",
+  // Karnataka
+  "Chikkodi","Bagalkot","Koppal","Haveri","Uttara Kannada","Davanagere",
+  "Udupi Chikmagalur","Chamarajanagar","Bangalore Rural","Bangalore North",
+  "Bangalore Central","Bangalore South","Chikballapur","Dakshina Kannada",
+  // Kerala
+  "Vatakara","Alathur","Chalakudy","Mavelikkara","Attingal",
+  // Madhya Pradesh
+  "Morena","Tikamgarh","Damoh","Khajuraho","Sidhi","Shahdol","Mandla","Balaghat",
+  "Hoshangabad","Vidisha","Rajgarh","Khargone","Betul",
+  // Maharashtra
+  "Nandurbar","Raver","Buldhana","Wardha","Ramtek","Bhandara-Gondiya","Gadchiroli-Chimur",
+  "Yavatmal-Washim","Hingoli","Latur","Osmanabad","Madha","Ratnagiri-Sindhudurg",
+  "Hatkanangle","Shirur","Baramati","Indapur","Shirdi","Beed","Jalna","Dindori",
+  "Palghar","Kalyan","Mumbai North","Mumbai North West","Mumbai North East",
+  "Mumbai North Central","Mumbai South Central","Mumbai South","Maval","Raigad",
+  // Manipur
+  "Inner Manipur","Outer Manipur",
+  // Odisha
+  "Bargarh","Sundargarh","Keonjhar","Mayurbhanj","Jajpur","Dhenkanal","Bolangir",
+  "Kandhamal","Kendrapara","Jagatsinghpur","Aska","Berhampur","Nabarangpur","Kalahandi",
+  // Punjab
+  "Khadoor Sahib","Anandpur Sahib","Fatehgarh Sahib","Faridkot",
+  // Rajasthan
+  "Ganganagar","Churu","Jaipur Rural","Karauli-Dholpur","Dausa","Tonk-Sawai Madhopur",
+  "Nagaur","Jalore","Banswara","Rajsamand","Jhalawar-Baran",
+  // Tamil Nadu
+  "Thiruvallur","Chennai North","Chennai South","Chennai Central","Sriperumbudur",
+  "Kancheepuram","Arakkonam","Krishnagiri","Dharmapuri","Tiruvannamalai","Arani",
+  "Kallakurichi","Namakkal","Nilgiris","Pollachi","Perambalur","Chidambaram",
+  "Mayiladuthurai","Sivaganga","Virudhunagar","Ramanathapuram","Theni","Tenkasi",
+  "Kanniyakumari",
+  // Telangana
+  "Peddapalle","Zahirabad","Medak","Malkajgiri","Secunderabad","Chevella",
+  "Mahbubnagar","Nagarkurnool","Bhongir","Mahabubabad",
+  // Tripura
+  "Tripura West","Tripura East",
+  // Uttar Pradesh
+  "Kairana","Bijnor","Nagina","Sambhal","Amroha","Baghpat","Gautam Buddha Nagar",
+  "Bulandshahr","Hathras","Fatehpur Sikri","Mainpuri","Etah","Badaun","Aonla",
+  "Pilibhit","Dhaurahra","Hardoi","Misrikh","Unnao","Rae Bareli","Amethi",
+  "Pratapgarh","Farrukhabad","Kannauj","Akbarpur","Hamirpur","Kaushambi","Phulpur",
+  "Ambedkar Nagar","Bahraich","Shrawasti","Gonda","Faizabad","Barabanki","Ayodhya",
+  "Kaiserganj","Basti","Sant Kabir Nagar","Kushi Nagar","Deoria","Bansgaon","Lalganj",
+  "Azamgarh","Ghosi","Salempur","Machhlishahr","Chandauli","Bhadohi","Robertsganj",
+  // Uttarakhand
+  "Tehri Garhwal","Garhwal","Almora","Nainital-Udhamsingh Nagar",
+  // West Bengal
+  "Alipurduars","Darjeeling","Raiganj","Maldaha Uttar","Maldaha Dakshin","Jangipur",
+  "Baharampur","Krishnanagar","Ranaghat","Bangaon","Barrackpur","Dum Dum","Barasat",
+  "Basirhat","Jaynagar","Mathurapur","Diamond Harbour","Jadavpur","Kolkata Dakshin",
+  "Kolkata Uttar","Uluberia","Srerampur","Hooghly","Arambag","Tamluk","Kanthi",
+  "Ghatal","Jhargram","Purulia","Birbhum","Bardhaman-Durgapur","Bardhaman Purba",
+  "Bolpur","Bishnupur",
+  // UT constituencies
+  "Dadra and Nagar Haveli and Daman and Diu",
 
   // ════════════════════════════════════════════════════════════
   // US STATES (50)
@@ -470,14 +620,17 @@ const GEO_DATA = [
   "Sofia","Plovdiv","Varna","Athens","Thessaloniki","Piraeus",
   "Stockholm","Gothenburg","Malmo","Oslo","Bergen","Stavanger","Trondheim",
   "Copenhagen","Aarhus","Helsinki","Tampere","Turku","Reykjavik",
-  "Dublin","Cork","Belfast","Edinburgh","Glasgow","Manchester","Birmingham",
-  "Liverpool","Leeds","Sheffield","Bristol","Nottingham","Leicester",
+  "Dublin","Cork","Belfast","Edinburgh","Glasgow","Cardiff","Swansea","Manchester","Birmingham",
+  "Liverpool","Leeds","Sheffield","Bristol","Nottingham","Leicester","Newcastle upon Tyne",
   "Zurich","Geneva","Basel","Bern","Lausanne",
   "Kyiv","Kharkiv","Odessa","Dnipro","Donetsk","Lviv","Zaporizhzhia",
   // Russia (non-capital cities)
   "Saint Petersburg","Novosibirsk","Yekaterinburg","Nizhny Novgorod",
   "Samara","Kazan","Chelyabinsk","Omsk","Rostov-on-Don","Ufa","Krasnoyarsk",
   "Perm","Voronezh","Volgograd","Saratov","Tolyatti","Krasnodar","Irkutsk",
+  // Turkey (non-capital cities)
+  "Istanbul","Izmir","Bursa","Antalya","Adana","Gaziantep","Konya","Eskisehir","Trabzon","Kayseri",
+  "Diyarbakir","Mersin","Samsun","Denizli","Malatya","Erzurum",
   // Middle East (non-capital)
   "Dubai","Abu Dhabi","Sharjah","Jeddah","Mecca","Medina","Dammam",
   "Tel Aviv","Haifa","Beersheba","Aleppo","Mosul","Basra","Kirkuk",
@@ -496,7 +649,9 @@ const GEO_DATA = [
   "Cebu","Davao","Quezon City","Makati",
   "Surabaya","Bandung","Medan","Semarang","Makassar","Palembang",
   "Johor Bahru","Penang","Ipoh","Kota Kinabalu","Kuching",
-  "Mandalay","Yangon",
+  "Mandalay","Yangon","Bali",  // Southeast Asia
+  "Vladivostok",  // Russia Far East
+  "Cannes","Montpellier","Rennes",  // France
   // South Asia (non-Indian)
   "Lahore","Karachi","Rawalpindi","Faisalabad","Multan","Peshawar",
   "Quetta","Gujranwala","Sialkot","Bahawalpur","Sargodha","Sukkur",
@@ -509,7 +664,7 @@ const GEO_DATA = [
   "San Antonio","San Diego","Dallas","San Jose","Austin","Jacksonville",
   "San Francisco","Columbus","Charlotte","Indianapolis","Seattle","Denver",
   "Nashville","Oklahoma City","El Paso","Washington DC","Boston","Portland",
-  "Las Vegas","Memphis","Louisville","Baltimore","Milwaukee","Albuquerque",
+  "Las Vegas","Memphis","Louisville","Baltimore","Milwaukee","Albuquerque","Miami","Atlanta","Minneapolis","Tampa","Orlando","New Orleans",
   "Tucson","Fresno","Sacramento","Mesa","Omaha","Cleveland","Raleigh",
   "Toronto","Montreal","Vancouver","Calgary","Edmonton","Winnipeg","Ottawa",
   "Sao Paulo","Rio de Janeiro","Salvador","Fortaleza","Belo Horizonte",
@@ -940,6 +1095,25 @@ const COORDS = {
   "kitwe":[-12.82,28.22],"livingstone":[-17.85,25.87],"huambo":[-12.78,15.74],"lobito":[-12.37,13.54],
   "lubumbashi":[-11.68,27.47],"mbuji-mayi":[-6.15,23.60],"goma":[-1.68,29.22],"toamasina":[-18.15,49.40],
   "beira":[-19.84,34.84],"nampula":[-15.12,39.27],"walvis bay":[-22.96,14.51],"francistown":[-21.17,27.51],
+  // Turkey cities
+  "istanbul":[41.01,28.95],"izmir":[38.42,27.14],"bursa":[40.18,29.06],"antalya":[36.89,30.71],
+  "adana":[37.00,35.32],"gaziantep":[37.07,37.38],"konya":[37.87,32.49],"eskisehir":[39.78,30.52],
+  "trabzon":[41.00,39.73],"kayseri":[38.73,35.49],"diyarbakir":[37.91,40.22],"mersin":[36.80,34.64],
+  "samsun":[41.29,36.33],"denizli":[37.78,29.10],"malatya":[38.35,38.31],"erzurum":[39.91,41.27],
+  // UK additions
+  "cardiff":[51.48,-3.18],"swansea":[51.62,-3.94],"newcastle upon tyne":[54.98,-1.61],
+  // US additions
+  "miami":[25.77,-80.19],"atlanta":[33.75,-84.39],"minneapolis":[44.98,-93.27],
+  "tampa":[27.95,-82.46],"orlando":[28.54,-81.38],"new orleans":[29.95,-90.08],
+  // Oceania
+  "nukualofa":[-21.14,-175.22],
+  // Southeast Asia
+  "bali":[-8.34,115.09],
+  // Russia
+  "vladivostok":[43.11,131.87],
+  // France additions
+  "cannes":[43.55,7.02],"montpellier":[43.61,3.88],"rennes":[48.11,-1.68],
+  "sirsa":[29.53,75.02],"fatehabad":[29.51,75.45],"jind":[29.32,76.32],"kurukshetra":[29.96,76.86],"palwal":[28.14,77.33],"mount abu":[24.59,72.71],"england":[52.36,-1.17],"scotland":[56.49,-4.20],"wales":[52.13,-3.78],"northern ireland":[54.61,-6.69],
   "hargeisa":[9.56,44.07],"douala":[4.05,9.72],"kumasi":[6.69,-1.62],"lome":[6.14,1.22],
   "mbabane":[-26.32,31.14],"blantyre":[-15.79,35.00],"sydney":[-33.87,151.21],"melbourne":[-37.81,144.96],
   "brisbane":[-27.47,153.03],"perth":[-31.95,115.86],"adelaide":[-34.93,138.60],"gold coast":[-28.00,153.43],
@@ -1038,7 +1212,7 @@ function DistanceSummary({ chain }) {
             lineHeight: 1,
             letterSpacing: "-1px",
           }}>
-            {earthsAround}<span style={{ fontSize: "0.5em", color: "#6b7280", fontWeight: 400, marginLeft: 3 }}>×</span>
+            {earthsAround}<span style={{ fontSize: "0.65em", color: "#a0a0a0", fontWeight: 400, marginLeft: 5 }}>×</span>
           </div>
         </div>
         <div style={{
@@ -1060,7 +1234,7 @@ function DistanceSummary({ chain }) {
             lineHeight: 1,
             letterSpacing: "-1px",
           }}>
-            {moonPercent}<span style={{ fontSize: "0.5em", color: "#6b7280", fontWeight: 400, marginLeft: 3 }}>%</span>
+            {moonPercent}<span style={{ fontSize: "0.65em", color: "#a0a0a0", fontWeight: 400, marginLeft: 5 }}>%</span>
           </div>
         </div>
       </div>
@@ -1143,20 +1317,20 @@ const css = `
   @keyframes scoreFloat { 0%{opacity:1;transform:translateY(0)} 100%{opacity:0;transform:translateY(-80px)} }
   .end-score { text-align: center; }
   .end-score-number { font-family: 'Playfair Display', serif; font-size: 80px; font-weight: 900; color: var(--gold); line-height: 1; text-shadow: 0 0 60px rgba(201,168,76,0.4); }
-  .end-score-label { font-size: 10px; letter-spacing: 4px; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+  .end-score-label { font-size: 10px; letter-spacing: 4px; text-transform: uppercase; color: #9ca3af; margin-top: 6px; }
   .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; width: 100%; }
   .stat-box { background: var(--navy3); border: 1px solid var(--border); border-radius: 10px; padding: 16px 12px; text-align: center; }
-  .stat-box-val { font-size: 28px; font-weight: 500; color: var(--text); }
-  .stat-box-lbl { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+  .stat-box-val { font-size: 28px; font-weight: 500; color: #f0ebe0; }
+  .stat-box-lbl { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #9ca3af; margin-top: 4px; }
   .chain-summary { width: 100%; display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
   .chain-summary-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; background: var(--navy3); border: 1px solid var(--border); }
-  .chain-summary-idx { font-size: 10px; color: var(--muted); width: 20px; flex-shrink: 0; }
-  .chain-summary-word { flex: 1; font-size: 14px; }
+  .chain-summary-idx { font-size: 10px; color: #9ca3af; width: 20px; flex-shrink: 0; }
+  .chain-summary-word { flex: 1; font-size: 14px; color: #f0ebe0; }
   .chain-summary-who { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; }
   .chain-summary-who.player { background: rgba(56,189,248,0.15); color: var(--teal); }
   .chain-summary-who.computer { background: rgba(201,168,76,0.1); color: var(--gold); }
   .chain-summary-who.auto { background: rgba(239,68,68,0.1); color: #f87171; }
-  .chain-summary-pts { font-size: 12px; color: var(--gold); width: 52px; text-align: right; }
+  .chain-summary-pts { font-size: 12px; color: #e8c96a; width: 52px; text-align: right; font-weight: 500; }
   .end-btn-row { display: flex; gap: 10px; width: 100%; }
   .globe-deco { position: fixed; top: -120px; right: -120px; width: 320px; height: 320px; border-radius: 50%; border: 1px solid rgba(201,168,76,0.08); background: radial-gradient(circle at 35% 35%, rgba(201,168,76,0.06), transparent 70%); pointer-events: none; z-index: 0; }
   .globe-deco::before { content: ''; position: absolute; inset: 20px; border-radius: 50%; border: 1px solid rgba(201,168,76,0.05); }
@@ -1244,6 +1418,7 @@ export default function GeoChain() {
   function handleTimeout() {
     const ns = strikesRef.current + 1;
     strikesRef.current = ns; setStrikes(ns);
+    playSound("timeout");
 
     if (ns >= 3) {
       setFeedback("Time's up!"); setFeedbackOk(false); setInputState("error");
@@ -1290,6 +1465,7 @@ export default function GeoChain() {
     if (stripped[0]?.toUpperCase() !== currentLetter.toUpperCase()) {
       setFeedback(`Must start with "${currentLetter.toUpperCase()}"`);
       setFeedbackOk(false); setInputState("error");
+      playSound("wrong");
       setInputVal("");
       setTimeout(() => { setInputState(""); setFeedback(""); }, 1200);
       return;
@@ -1311,6 +1487,7 @@ export default function GeoChain() {
       strikesRef.current = ns; setStrikes(ns);
       setFeedback("Not a recognised place!");
       setFeedbackOk(false); setInputState("error");
+      playSound("wrong");
       setInputVal("");
       setTimeout(() => {
         if (ns >= 3) { clearInterval(timerRef.current); doEndGame("3 invalid answers — game over!", ns); }
@@ -1329,6 +1506,7 @@ export default function GeoChain() {
     setScore(ns); setUsedSet(newUsed);
     setChain(c => [...c, { word: canonical, who: "player", score: pts }]);
     setInputVal(""); setFeedback(`+${pts} pts`); setFeedbackOk(true); setInputState("success");
+    playSound("correct");
     showPop(pts);
 
     setTimeout(() => {
@@ -1339,7 +1517,7 @@ export default function GeoChain() {
   // ── Computer turn ──
   useEffect(() => {
     if (screen !== "game" || turn !== "computer") return;
-    const delay = difficulty === "hard" ? 1100 : difficulty === "easy" ? 450 : 700;
+    const delay = difficulty === "hard" ? 1600 : difficulty === "easy" ? 950 : 1200;
     const t = setTimeout(() => {
       const pick = computerPick(currentLetter, usedSet, difficulty);
       if (!pick) { doEndGame("Computer couldn't answer — you win! 🎉", strikesRef.current); return; }
